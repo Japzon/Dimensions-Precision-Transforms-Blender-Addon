@@ -1,12 +1,21 @@
 # --------------------------------------------------------------------------------
+
 # Copyright (c) 2026 Greenlex Systems Services Incorporated. All rights reserved.
+
 #
+
 # Licensed under the GNU General Public License (GPL).
+
 # Original Architecture & Logic by Greenlex Systems Services Incorporated.
+
 #
+
 # No person or organization is authorized to misrepresent this work or claim
+
 # original authorship for themselves. Proper attribution is mandatory.
+
 # --------------------------------------------------------------------------------
+
 import bpy
 import bmesh
 import math
@@ -24,28 +33,36 @@ from gpu_extras.batch import batch_for_shader
 from typing import List, Tuple, Optional, Set, Any, Dict, Union
 from . import config
 from .config import *
+
 # ------------------------------------------------------------------------
+
 #   Guard Variables (LSD Internal State)
+
 # ------------------------------------------------------------------------
+
 _prop_update_guard = False
+
 _joint_editor_update_guard = False
+
 _last_active_bone_key = None
+
 _update_gizmo_guard = False
+
 # Per-Item Synchronization Guards (Recursion Prevention)
 # AI Editor Note: Transitioned from boolean to set to support batch-editing in grouped lists.
 _dim_sync_active_ids = set()
 _dim_timer_queued_ids = set()
 _dim_pending_batch_sync_ids = set() # Batch update queue for grouped edits
+
 # AI Editor Note: Per-Item guarding (Set of IDs) to prevent recursion on a per-object basis.
 # This is critical for chaining support (Dimension 1 moving Dimension 2's Root).
 # A global boolean would block Dim 2 from syncing while Dim 1 is updating.
 _dim_sync_active_ids = set()
-_dim_flip_active_ids = set() # Unique guard for role-swapping
+
 _curve_update_guard = False
+
 _path_align_update_guard = False
-def safe_divide(val, s):
-    """Robust division by zero protection for scaling logic."""
-    return val / s if abs(s) > 0.0001 else val
+
 def update_panel_collapse(self, context):
     """Callback for all panel visibility properties to support Auto-Collapse"""
     if not context or not context.scene: return
@@ -62,7 +79,9 @@ def update_panel_collapse(self, context):
     # If called via property toggle, we still need to know which one.
     pass
 #   PART 1: LOGIC, HELPERS & HANDLERS
+
 # ------------------------------------------------------------------------
+
 class LSD_OT_Core_DisablePanel(bpy.types.Operator):
     """Disables (hides) a panel from the UI. Re-enable it in Preferences > Visible Panels."""
     bl_idname = "lsd.disable_panel"
@@ -72,47 +91,6 @@ class LSD_OT_Core_DisablePanel(bpy.types.Operator):
     def execute(self, context: bpy.types.Context) -> Set[str]:
         if hasattr(context.scene, self.prop_name):
             setattr(context.scene, self.prop_name, False)
-        return {'FINISHED'}
-class LSD_OT_Core_TogglePanelVisibility(bpy.types.Operator):
-    """
-    Toggles the visibility of a specified UI panel.
-    This operator is used in panel headers to provide a clickable toggle
-    that explicitly controls the panel's expanded/collapsed state. It works by
-    flipping a boolean scene property that the panel's `draw` method checks.
-    """
-    bl_idname = "lsd.toggle_panel_visibility"
-    bl_label = "Toggle Panel Visibility"
-    bl_description = "Expands or collapses a UI panel"
-    bl_options = {'INTERNAL'}
-    panel_property: bpy.props.StringProperty(
-        name="Panel Property",
-        description="The name of the boolean scene property to toggle (e.g., 'lsd_show_panel_parts')"
-    )
-    def execute(self, context: bpy.types.Context) -> Set[str]:
-        """
-        Executes the toggle operation.
-        Args:
-            context: The current Blender context.
-        Returns:
-            A set containing {'FINISHED'} on success.
-        """
-        if not hasattr(context.scene, self.panel_property):
-            self.report({'ERROR'}, f"Scene property '{self.panel_property}' not found.")
-            return {'CANCELLED'}
-        current_value = getattr(context.scene, self.panel_property)
-        new_value = not current_value
-        setattr(context.scene, self.panel_property, new_value)
-        # AI Editor Note: Handle auto-collapse logic here explicitly.
-        # This avoids the complexity and potential recursion of property update callbacks.
-        if new_value and context.scene.lsd_auto_collapse_panels:
-            # AI Editor Note: Access LSD_PANEL_PROPS via the config module
-            # to ensure we have the latest version even after partial reloads.
-            panel_props = getattr(config, "LSD_PANEL_PROPS", [])
-            for prop_name in panel_props:
-                if prop_name != self.panel_property and prop_name.startswith("lsd_show_panel_"):
-                    # Double check if scene has the property
-                    if hasattr(context.scene, prop_name):
-                        setattr(context.scene, prop_name, False)
         return {'FINISHED'}
 class LSD_OT_Core_SnapCursorToActive(bpy.types.Operator):
     """Snap 3D cursor to the active object's origin"""
@@ -298,6 +276,7 @@ def update_selected_light(self, context: bpy.types.Context):
         if hasattr(light, 'specular_factor'): light.specular_factor = 1.0
         if hasattr(light, 'use_contact_shadow'): light.use_contact_shadow = False
 @persistent
+
 def sync_light_props_handler(scene, depsgraph=None):
     """
     Synchronizes the UI properties with the currently selected light.
@@ -386,6 +365,7 @@ def ensure_default_rig(context: bpy.types.Context) -> Optional[bpy.types.Object]
         print(f"Error creating default rig: {e}")
         return None
 @persistent
+
 def auto_set_active_rig_handler(dummy: Any) -> None:
     """
     A persistent handler that runs automatically after a .blend file is loaded.
@@ -402,6 +382,7 @@ def auto_set_active_rig_handler(dummy: Any) -> None:
     if bpy.context and bpy.context.scene:
         ensure_default_rig(bpy.context)
 @persistent
+
 def load_panel_order_handler(dummy: Any) -> None:
     """
     Applies the saved panel order from scene properties after loading a file.
@@ -409,6 +390,7 @@ def load_panel_order_handler(dummy: Any) -> None:
     # Use a timer to ensure context is ready
     bpy.app.timers.register(lambda: (bpy.ops.lsd.update_panel_order() and None), first_interval=0.2)
 @persistent
+
 def set_scene_units_handler(dummy: Any) -> None:
     """Sets the scene length unit to Millimeters on load."""
     if bpy.context and bpy.context.scene:
@@ -514,6 +496,7 @@ def get_font_data(font_name: str, is_bold: bool = False, is_italic: bool = False
         except: return None
     return None
 @persistent
+
 def toggle_placement_parenting(scene, context):
     """
     Toggles parenting relationship for placement mode.
@@ -549,6 +532,7 @@ def toggle_placement_parenting(scene, context):
     for bone in rig.pose.bones:
         apply_native_constraints(bone)
 @persistent
+
 def lsd_placement_handler(scene, depsgraph=None):
     """
     Persistent handler to ensure placement mode state consistency across view layers.
@@ -924,6 +908,7 @@ def get_dimension_root(obj: Optional[bpy.types.Object]) -> Optional[bpy.types.Ob
                             return child
     return None
 @persistent
+
 def lsd_dimension_sync_handler(scene: bpy.types.Scene, depsgraph: bpy.types.Depsgraph) -> None:
     """Ultimate real-time synchronization for Procedural Dimensions."""
     # 0. Global recursive guard check
@@ -941,51 +926,41 @@ def lsd_dimension_sync_handler(scene: bpy.types.Scene, depsgraph: bpy.types.Deps
         root = obj.parent
         if not root: continue
         # Calculate Real-World orientation and distance
-        # We prioritize the actual Slave Object (External Hook or Mesh) over internal visual anchors.
-        slave_obj = obj.get("lsd_slave_obj")
-        target_eval = None
-        if slave_obj and slave_obj.name in bpy.data.objects:
-             target_eval = depsgraph.id_eval_get(slave_obj)
-        else:
-             # Fallback to internal hook anchor if no external slave is assigned
-             internal_hook = next((c for c in root.children if c.get("lsd_is_dimension_anchor") == "HOOK"), None)
-             if internal_hook:
-                  target_eval = depsgraph.id_eval_get(internal_hook)
-        if not target_eval: continue
-        # Calculate evaluated local target coordinates relative to evaluated root
-        root_eval = depsgraph.id_eval_get(root)
-        local_target = root_eval.matrix_world.inverted() @ target_eval.matrix_world.translation
+        # We find the Mesh Hook (the slave) to determine distance
+        target_mesh_hook = next((c for c in root.children if c.get("lsd_is_dimension_anchor") == "HOOK"), None)
+        if not target_mesh_hook:
+             # In v1.2.8 architecture, the mesh hook is parented to 'ab' (internal end),
+             # so we find it via the child of the end hook.
+             ab = next((c for c in root.children if c.get("lsd_is_dimension_anchor") == "END"), None)
+             if ab:
+                  target_mesh_hook = next((c for c in ab.children if c.get("lsd_is_dimension_hook") == "END"), None)
+        if not target_mesh_hook: continue
+        # Calculate local target coordinates relative to assembly root
+        local_target = root.matrix_world.inverted() @ target_mesh_hook.matrix_world.translation
         # 1. LENGTH SYNC (X/Y/Z primary drafting axis)
         if obj.name in _dim_sync_active_ids: continue
-        # AI Editor Note: Sync Lock - Prevents snapping back during the frames
-        # before the depsgraph evaluates a property change.
-        lock = obj.get("_lsd_sync_lock", 0)
-        if lock > 0:
-             obj["_lsd_sync_lock"] = lock - 1
-             # Property changes can still drive geometry during a lock,
-             # but geometry cannot drive properties.
-             pass
         last_l = obj.get("_lsd_last_built_length", -1.0)
-        curr_l = orig_dim_props.length
-        dist = abs(local_target.z)
-        prop_has_changed = abs(curr_l - last_l) > 0.0001
-        geom_has_changed = abs(dist - last_l) > 0.0001
-        if prop_has_changed:
-             update_dimension_length(obj)
-             obj["_lsd_last_built_length"] = curr_l
-             # Extend lock on manual edit to ensure stability
-             obj["_lsd_sync_lock"] = 2
-        elif geom_has_changed and not dim_props.is_manual and lock <= 0:
-             # Only follow geometry if not locked and in dynamic mode
-             orig_dim_props["length"] = dist
-             obj["_lsd_last_built_length"] = dist
-             _dim_sync_active_ids.add(obj.name)
-             try:
+        curr_l = dim_props.length
+        if not dim_props.is_manual:
+             # DYNAMIC MODE: Object/Mesh Hook drives the property
+             dist = abs(local_target.z)
+             if abs(curr_l - dist) > 0.0001:
+                  _dim_sync_active_ids.add(obj.name)
+                  try:
+                      orig_dim_props["length"] = dist
+                      update_dimension_length(obj)
+                      obj["_lsd_last_built_length"] = dist
+                      # Tags to ensure anchors/points refresh coordinate matrices
+                      for child in root.children:
+                           if child.get("lsd_is_dimension_anchor"): child.update_tag()
+                  finally:
+                      _dim_sync_active_ids.remove(obj.name)
+        else:
+             # MANUAL/DRIVEN MODE: Check if an external driver changed the value
+             if abs(last_l - curr_l) > 0.0001:
                   update_dimension_length(obj)
-             finally:
-                  _dim_sync_active_ids.remove(obj.name)
+                  obj["_lsd_last_built_length"] = curr_l
         # 2. TRANSVERSE SYNC (Alignment stability)
-        # Maintain alignment for drafting parallelogram
         if abs(dim_props.target_x - local_target.x) > 0.0001 or abs(dim_props.target_y - local_target.y) > 0.0001:
              if not dim_props.is_manual:
                   _dim_sync_active_ids.add(obj.name)
@@ -997,7 +972,8 @@ def lsd_dimension_sync_handler(scene: bpy.types.Scene, depsgraph: bpy.types.Deps
                        _dim_sync_active_ids.remove(obj.name)
 def update_dimension_length(obj):
     """
-    Core handler for syncing dimension geometry to the length property.
+    Manual/Sync refresh for dimension components.
+    Handles both Root and Label object inputs.
     Source of Truth: The Label (Host) object.
     """
     if not obj: return
@@ -1006,43 +982,32 @@ def update_dimension_length(obj):
     if not root or not host: return
     dim_props = getattr(host, "lsd_pg_dim_props", None)
     if not dim_props: return
-    # RECURSION GUARD: Per-Item synchronization
-    was_owner = False
-    if root.name not in _dim_sync_active_ids:
-        _dim_sync_active_ids.add(root.name)
-        was_owner = True
-    try:
-        if was_owner:
-             # AI Editor Note: Entry from UI/User edit.
-             # Set lock to stop the handler from snapping back during depsgraph evaluation.
-             obj["_lsd_sync_lock"] = 2
-        length = dim_props.length
-        # 1. Coordinate Sync (Labels, End-Anchors, Legs)
-        label_obj = None
-        for child in root.children:
-            if child.get("lsd_is_dimension"): label_obj = child
-            # AI Editor Note: Transformation logic is now centralized in update_arrow_settings
-            # to ensure all visual components (lines, arrows, labels) move in sync
-            # and avoid flickering from double-updates.
+    length = dim_props.length
+    # 1. Coordinate Sync (Labels, End-Anchors, Legs)
+    label_obj = None
+    for child in root.children:
+        if child.get("lsd_is_dimension"): label_obj = child
+        is_end = child.get("lsd_is_dimension_anchor") == "END"
+        is_ext_b = child.get("lsd_is_extension_line") and child.get("lsd_extension_type") == "END"
+        if is_end or is_ext_b:
+            child.location.z = length
+        elif child.get("lsd_is_dimension_line"):
+            # The midsection is updated in update_arrow_settings for alignment reasons
             pass
-        # 2. Update Label String & Units
-        if label_obj:
-            unit_str = "m" if dim_props.unit_display == 'METERS' else "mm"
-            val = length if unit_str == "m" else length * 1000.0
-            if hasattr(label_obj.data, "body"):
-                 label_text = f"{val:.2f} {unit_str}"
-                 if label_obj.data.body != label_text:
-                      label_obj.data.body = label_text
-            # Label Z-offset is also handled in update_arrow_settings
-            pass
-        # 3. Global settings passthrough and final sync
-        update_arrow_settings(root)
-        # AI Editor Note: Added explicit tags to fix the 'offset until undo' bug
-        host.update_tag()
-        root.update_tag()
-    finally:
-        if was_owner:
-            _dim_sync_active_ids.remove(root.name)
+    # 2. Update Label String & Units
+    if label_obj:
+        unit_str = "m" if dim_props.unit_display == 'METERS' else "mm"
+        val = length if unit_str == "m" else length * 1000.0
+        if hasattr(label_obj.data, "body"):
+             label_text = f"{val:.2f} {unit_str}"
+             if label_obj.data.body != label_text:
+                  label_obj.data.body = label_text
+        label_obj.location.z = length / 2
+    # 3. Global settings passthrough and final sync
+    update_arrow_settings(root)
+    # AI Editor Note: Added explicit tags to fix the 'offset until undo' bug
+    host.update_tag()
+    root.update_tag()
 def update_arrow_settings(obj):
     """
     Updates visual settings (scale, color, direction) for the assembly.
@@ -1055,144 +1020,178 @@ def update_arrow_settings(obj):
     if not root or not host: return
     dim_props = getattr(host, "lsd_pg_dim_props", None)
     if not dim_props: return
-    # RECURSION GUARD: Per-Item synchronization
-    was_owner = False
-    if root.name not in _dim_sync_active_ids:
-        _dim_sync_active_ids.add(root.name)
-        was_owner = True
-    try:
-        direction_map = {
-            'X': mathutils.Vector((1, 0, 0)),
-            'Y': mathutils.Vector((0, 1, 0)),
-            'Z': mathutils.Vector((0, 0, 1)),
-            '-X': mathutils.Vector((-1, 0, 0)),
-            '-Y': mathutils.Vector((0, -1, 0)),
-            '-Z': mathutils.Vector((0, 0, -1)),
-        }
-        # 1. Parameter Sync
-        unit_scale = bpy.context.scene.unit_settings.scale_length
-        us = 1.0 / unit_scale if unit_scale > 0 else 1.0
-        length = dim_props.length
-        arrow_s = dim_props.arrow_scale * us
-        text_s = dim_props.text_scale * us
-        offset = dim_props.offset * us
-        line_t = dim_props.line_thickness * us
-        dir_enum = dim_props.direction
-        # Calculate drafting parallelogram offset vectors
-        mat_inv = root.matrix_world.to_3x3().inverted_safe()
-        # Resolve the world offset vector based on alignment flags
-        offset_world_vec = mathutils.Vector((0, 0, 0))
-        if dim_props.align_x: offset_world_vec.x += 1
-        if dim_props.align_nx: offset_world_vec.x -= 1
-        if dim_props.align_y: offset_world_vec.y += 1
-        if dim_props.align_ny: offset_world_vec.y -= 1
-        if dim_props.align_z: offset_world_vec.z += 1
-        if dim_props.align_nz: offset_world_vec.z -= 1
-        if offset_world_vec.length < 0.001:
-             # Default: assembly local Y axis
-             offset_world_vec = root.matrix_world.to_3x3() @ mathutils.Vector((0, 1, 0))
-        else:
-             offset_world_vec = offset_world_vec.normalized()
-        offset_local_dir = (mat_inv @ offset_world_vec).normalized()
-        # Compensation for Parent Scale
-        rw_scale = root.matrix_world.to_scale()
-        # Apply location scale compensation to move_vec
-        move_vec = mathutils.Vector((
-            safe_divide(offset_local_dir.x * offset, rw_scale.x),
-            safe_divide(offset_local_dir.y * offset, rw_scale.y),
-            safe_divide(offset_local_dir.z * offset, rw_scale.z)
-        ))
-        # Extension Leg Rotation
-        ext_rot_vec = (-move_vec)
-        ext_leg_length = ext_rot_vec.length
-        ext_rot_euler = (ext_rot_vec.normalized()).to_track_quat('Z', 'Y').to_euler()
-        for child in root.children:
-            # 1. PHYSICAL MASTER ANCHORS & HOOKS
-            tag = child.get("lsd_is_dimension_anchor")
-            if tag in ["MASTER", "HOOK"]:
-                 if child.get("lsd_anchor_type") == "END" or tag == "HOOK":
-                      child.location = (
-                          safe_divide(dim_props.target_x, rw_scale.x),
-                          safe_divide(dim_props.target_y, rw_scale.y),
-                          safe_divide(length, rw_scale.z)
-                      )
-                 else:
-                      child.location = (0, 0, 0)
-                 s_val = 0.05 if tag == "MASTER" else 0.4
-                 child.scale = (safe_divide(s_val, rw_scale.x), safe_divide(s_val, rw_scale.y), safe_divide(s_val, rw_scale.z))
-                 continue
-            # 2. VISUAL COMPONENTS
-            if child.get("lsd_is_dimension_anchor") == "VISUAL":
-                 child.scale = (safe_divide(arrow_s, rw_scale.x), safe_divide(arrow_s, rw_scale.y), safe_divide(arrow_s, rw_scale.z))
-                 child.location = move_vec.copy()
-                 if child.get("lsd_anchor_type") == "END":
-                      child.location.z += safe_divide(length, rw_scale.z)
-            elif child.get("lsd_is_dimension_line"): # The Main Line
-                child.location = move_vec.copy()
-                child.scale = (safe_divide(line_t, rw_scale.x), safe_divide(line_t, rw_scale.y), safe_divide(length, rw_scale.z))
-                child.rotation_euler = (0, 0, 0)
-            elif child.get("lsd_is_extension_line"):
-                child.hide_viewport = not dim_props.use_extension_lines
-                child.hide_render = not dim_props.use_extension_lines
-                if not dim_props.use_extension_lines: continue
-                child.scale.x = safe_divide(line_t * 0.9, rw_scale.x)
-                child.scale.y = safe_divide(line_t * 0.9, rw_scale.y)
-                child.location = move_vec.copy()
-                if child.get("lsd_extension_type") == "END":
-                     child.location.z += safe_divide(length, rw_scale.z)
-                child.rotation_euler = ext_rot_euler
-                child.scale.z = safe_divide(ext_leg_length, rw_scale.z)
-                if child.scale.z < 0.001: child.scale.z = 0.001
-            elif child.get("lsd_is_dimension"): # The Label
-                ts_mod = 1.15 if dim_props.font_bold else 1.0
-                child.scale = (
-                    safe_divide(text_s * ts_mod, rw_scale.x),
-                    safe_divide(text_s * ts_mod, rw_scale.y),
-                    safe_divide(text_s * ts_mod, rw_scale.z)
-                )
-                text_clearance = move_vec.normalized() * (dim_props.text_offset * us)
-                f_data = get_font_data(dim_props.font_name, dim_props.font_bold, dim_props.font_italic)
-                if f_data:
-                     child.data.font = f_data
-                     f_path_low = f_data.filepath.lower()
-                     v_shear = 0.2 if dim_props.font_italic and not any(p in f_path_low for p in ['it', 'ital', 'oblique', 'z']) else 0.0
-                     if hasattr(child.data, "shear"): child.data.shear = v_shear
-                flip_rot = mathutils.Euler((0, 0, 0))
-                if dim_props.flip_text:
-                    flip_rot = mathutils.Euler((0, math.pi, 0))
-                # Label Vertical Alignment
-                child.location = move_vec + text_clearance
-                child.location.z += safe_divide(length / 2, rw_scale.z)
-                if hasattr(child.data, "align_x"):
-                     child.data.align_x = dim_props.text_alignment
-                # Sync font to GN if present
-                mod = child.modifiers.get("Dynamic_Dimension")
-                if mod and mod.node_group:
-                     font_id = next((item.identifier for item in mod.node_group.interface.items_tree if item.name == "Font"), None)
-                     text_size_id = next((item.identifier for item in mod.node_group.interface.items_tree if item.name == "Text Size"), None)
-                     if font_id: mod[font_id] = f_data
-                     if text_size_id: mod[text_size_id] = dim_props.text_scale
-                     child.update_tag()
-                # Text Orientation System
-                vec_x = mathutils.Vector((0, 0, 1))
-                vec_y = offset_local_dir.normalized()
-                vec_z = vec_x.cross(vec_y).normalized()
-                m = mathutils.Matrix((vec_x, vec_y, vec_z)).transposed()
-                base_rot = m.to_euler()
-                user_euler = mathutils.Euler(dim_props.text_rotation, 'XYZ')
-                combined_rot = (base_rot.to_matrix() @ flip_rot.to_matrix() @ user_euler.to_matrix()).to_euler()
-                child.rotation_euler = combined_rot
-                mat = child.active_material
-                if mat:
-                     child.color = mat.diffuse_color
-                     child.show_in_front = True
-        root.update_tag()
-        # AI Editor Note: Sync Flip Trigger.
-        # Must call the atomic role-swap logic here to handle 'is_flipped' changes.
-        sync_dimension_flipping(root)
-    finally:
-        if was_owner:
-            _dim_sync_active_ids.remove(root.name)
+    direction_map = {
+        'X': mathutils.Vector((1, 0, 0)),
+        'Y': mathutils.Vector((0, 1, 0)),
+        'Z': mathutils.Vector((0, 0, 1)),
+        '-X': mathutils.Vector((-1, 0, 0)),
+        '-Y': mathutils.Vector((0, -1, 0)),
+        '-Z': mathutils.Vector((0, 0, -1)),
+    }
+    # 1. Parameter Sync
+    # We resolve the scene's unit scale to keep visual components (line, arrows, text)
+    # legible regardless of the measurement system (mm vs m).
+    unit_scale = bpy.context.scene.unit_settings.scale_length
+    us = 1.0 / unit_scale if unit_scale > 0 else 1.0
+    length = dim_props.length
+    arrow_s = dim_props.arrow_scale * us
+    text_s = dim_props.text_scale * us
+    offset = dim_props.offset * us
+    line_t = dim_props.line_thickness * us
+    dir_enum = dim_props.direction
+    # Calculate drafting parallelogram offset vectors
+    mat_inv = root.matrix_world.to_3x3().inverted_safe()
+    # Resolve the world offset vector based on alignment flags
+    # AI Editor Note: User Request - Allow combining axis alignments for diagonal offsets.
+    offset_world_vec = mathutils.Vector((0, 0, 0))
+    if dim_props.align_x: offset_world_vec.x += 1
+    if dim_props.align_nx: offset_world_vec.x -= 1
+    if dim_props.align_y: offset_world_vec.y += 1
+    if dim_props.align_ny: offset_world_vec.y -= 1
+    if dim_props.align_z: offset_world_vec.z += 1
+    if dim_props.align_nz: offset_world_vec.z -= 1
+    if offset_world_vec.length < 0.001:
+         # Default: assembly local Y axis
+         offset_world_vec = root.matrix_world.to_3x3() @ mathutils.Vector((0, 1, 0))
+    else:
+         offset_world_vec = offset_world_vec.normalized()
+    offset_local_dir = (mat_inv @ offset_world_vec)
+    offset_local_dir = (mat_inv @ offset_world_vec).normalized()
+    # AI Editor Note: Logic Update (Parallelogram Drafting).
+    # Per user feedback, we no longer enforce Zero-Z. If the user aligns with
+    # a world-axis that is not perpendicular to the line, we allow the
+    # assembly to "slant" or "slide" as long as it aligns with the set axis.
+    # To prevent "pushing" or "overlap" artifacts, we must ensure END anchors
+    # add the Z-offset to the length properly.
+    # Compensation for Parent Scale:
+    # If the root is parented to a scaled object, we must divide our children's
+    # scale and location by the root's world scale to maintain absolute drafting units.
+    rw_scale = root.matrix_world.to_scale()
+    def safe_divide(val, s): return val / s if abs(s) > 0.0001 else val
+    # Apply location scale compensation to move_vec
+    move_vec = mathutils.Vector((
+        safe_divide(offset_local_dir.x * offset, rw_scale.x),
+        safe_divide(offset_local_dir.y * offset, rw_scale.y),
+        safe_divide(offset_local_dir.z * offset, rw_scale.z)
+    ))
+    # Extension Leg Rotation: points from the dimension line back to the target points.
+    # This vector is (-move_vec) in the assembly's local drafting space.
+    ext_rot_vec = (-move_vec)
+    ext_leg_length = ext_rot_vec.length
+    ext_rot_euler = (ext_rot_vec.normalized()).to_track_quat('Z', 'Y').to_euler()
+    # Compensation for Parent Scale:
+    # If the root is parented to a scaled object, we must divide our children's
+    # scale by the root's world scale to maintain absolute draftsman units.
+    rw_scale = root.matrix_world.to_scale()
+    def safe_divide(val, s): return val / s if abs(s) > 0.0001 else val
+    for child in root.children:
+        # 1. PHYSICAL MASTER ANCHORS & HOOKS: Fixed scale
+        tag = child.get("lsd_is_dimension_anchor")
+        if tag in ["MASTER", "HOOK"]:
+             if child.get("lsd_anchor_type") == "END" or tag == "HOOK":
+                  child.location = (dim_props.target_x, dim_props.target_y, length)
+             else:
+                  child.location = (0, 0, 0)
+             s_val = 0.05 if tag == "MASTER" else 0.4
+             child.scale = (safe_divide(s_val, rw_scale.x), safe_divide(s_val, rw_scale.y), safe_divide(s_val, rw_scale.z))
+             continue
+        # 2. VISUAL COMPONENTS: These slide along the drafting offset
+        if child.get("lsd_is_dimension_anchor") == "VISUAL":
+             child.scale = (safe_divide(arrow_s, rw_scale.x), safe_divide(arrow_s, rw_scale.y), safe_divide(arrow_s, rw_scale.z))
+             child.location = move_vec.copy()
+             if child.get("lsd_anchor_type") == "END":
+                  child.location.z += length
+        elif child.get("lsd_is_dimension_line"): # The Main Line
+            child.location = move_vec.copy()
+            child.scale = (safe_divide(line_t, rw_scale.x), safe_divide(line_t, rw_scale.y), safe_divide(length, rw_scale.z))
+            child.rotation_euler = (0, 0, 0)
+        elif child.get("lsd_is_extension_line"):
+            child.hide_viewport = not dim_props.use_extension_lines
+            child.hide_render = not dim_props.use_extension_lines
+            if not dim_props.use_extension_lines: continue
+            child.scale.x = safe_divide(line_t * 0.9, rw_scale.x)
+            child.scale.y = safe_divide(line_t * 0.9, rw_scale.y)
+            child.location = move_vec.copy()
+            if child.get("lsd_extension_type") == "END":
+                 child.location.z += length
+            child.rotation_euler = ext_rot_euler
+            child.scale.z = safe_divide(ext_leg_length, rw_scale.z)
+            if child.scale.z < 0.001: child.scale.z = 0.001
+        elif child.get("lsd_is_dimension"): # The Label
+            # OPTIC COMPENSATION: Bold fonts often feel 'smaller' or compressed.
+            # Apply a 1.15x scale factor when Bold is active to ensure visual parity.
+            ts_mod = 1.15 if dim_props.font_bold else 1.0
+            child.scale = (
+                safe_divide(text_s * ts_mod, rw_scale.x),
+                safe_divide(text_s * ts_mod, rw_scale.y),
+                safe_divide(text_s * ts_mod, rw_scale.z)
+            )
+            # Clearance from drafting line
+            text_clearance = move_vec.normalized() * (dim_props.text_offset * us)
+            # Reusable Font Assignment
+            f_data = get_font_data(dim_props.font_name, dim_props.font_bold, dim_props.font_italic)
+            if f_data:
+                 child.data.font = f_data
+                 f_path_low = f_data.filepath.lower()
+                 # Functional Italic fix
+                 v_shear = 0.2 if dim_props.font_italic and not any(p in f_path_low for p in ['it', 'ital', 'oblique', 'z']) else 0.0
+                 if hasattr(child.data, "shear"): child.data.shear = v_shear
+                 for mod in child.modifiers:
+                     if mod.type == 'NODES' and mod.node_group:
+                         for inp in mod.node_group.inputs:
+                             if inp.name == "Shear":
+                                 mod[inp.identifier] = v_shear
+                                 break
+                 child.data.offset = 0.0
+                 if hasattr(child.data, "update_tag"): child.data.update_tag()
+            # (Deleted old inline font block)
+            # AI Editor Note: Flip Text Mirroring
+            # Stay at original location but 'face the other way'.
+            # Solution: Rotate 180 on Y (Mirror Reflector) to maintain upright baseline.
+            flip_rot = mathutils.Euler((0, 0, 0))
+            if dim_props.flip_text:
+                # Rotate 180 around Local Y (Horizontal Reflection)
+                # This mirrors the text direction while keeping it upright.
+                flip_rot = mathutils.Euler((0, math.pi, 0))
+            child.location = move_vec + text_clearance
+            child.location.z += length / 2
+            if hasattr(child.data, "align_x"):
+                 child.data.align_x = dim_props.text_alignment
+            # Sync font to GN if present
+            mod = child.modifiers.get("Dynamic_Dimension")
+            if mod and mod.node_group:
+                 font_id = None
+                 text_size_id = None
+                 if hasattr(mod.node_group, "interface"):
+                      for item in mod.node_group.interface.items_tree:
+                           if item.name == "Font":
+                                font_id = item.identifier
+                           elif item.name == "Text Size":
+                                text_size_id = item.identifier
+                 if font_id: mod[font_id] = f_data
+                 if text_size_id: mod[text_size_id] = dim_props.text_scale
+                 # Force GN Re-evaluation
+                 child.update_tag()
+            # Text Orientation System (Parallel Alignment).
+            vec_x = mathutils.Vector((0, 0, 1)) # Assembly direction
+            vec_y = offset_local_dir.normalized()
+            vec_z = vec_x.cross(vec_y).normalized()
+            # Construct a pure orthonormal orientation matrix (World-to-Text-Basis)
+            m = mathutils.Matrix((vec_x, vec_y, vec_z)).transposed()
+            base_rot = m.to_euler()
+            # Apply user-defined Euler rotation + flip correctly
+            user_euler = mathutils.Euler(dim_props.text_rotation, 'XYZ')
+            combined_rot = (base_rot.to_matrix() @ flip_rot.to_matrix() @ user_euler.to_matrix()).to_euler()
+            child.rotation_euler = combined_rot
+            # Sync material & visibility
+            mat = child.active_material
+            if mat:
+                 child.color = mat.diffuse_color
+                 child.show_in_front = True
+    root.update_tag()
+    # AI Editor Note: Sync Flip Trigger.
+    # Must call the atomic role-swap logic here to handle 'is_flipped' changes.
+    sync_dimension_flipping(root)
 def _bake_and_release_hook(hook_empty: bpy.types.Object) -> None:
     """Inline bake utility for the flip protocol.
     Applies the current deformation of the mesh as its new rest pose, re-creates
@@ -1215,38 +1214,28 @@ def _bake_and_release_hook(hook_empty: bpy.types.Object) -> None:
                 }))
     # 2. Bake each linked mesh's Hook modifier (apply → rebind at new rest state)
     prev_active = bpy.context.view_layer.objects.active
-    # Batch by mesh to minimize mode switches
-    mesh_map = {} # Object -> List[mod_data]
     for mesh_obj, mod_name, mod_data in meshes_to_bake:
-        if mesh_obj not in mesh_map: mesh_map[mesh_obj] = []
-        mesh_map[mesh_obj].append((mod_name, mod_data))
-    for mesh_obj, mods in mesh_map.items():
         try:
             bpy.context.view_layer.objects.active = mesh_obj
-            # 2a. Apply current hooks to bake state
-            applied_mods = []
-            for mod_name, mod_data in mods:
-                bpy.ops.object.modifier_apply(modifier=mod_name)
-                applied_mods.append((mod_name, mod_data))
-            # 2b. Re-create and Reset at new rest pose
-            bpy.ops.object.mode_set(mode='EDIT')
-            bpy.ops.mesh.select_all(action='SELECT')
-            for mod_name, mod_data in applied_mods:
-                bpy.ops.object.mode_set(mode='OBJECT') # Return to Object to add modifier
-                new_mod = mesh_obj.modifiers.new(name=mod_name, type='HOOK')
-                new_mod.object = hook_empty
-                if mod_data['vertex_group']: new_mod.vertex_group = mod_data['vertex_group']
-                new_mod.strength = mod_data['strength']
-                new_mod.falloff_type = mod_data['falloff_type']
-                new_mod.falloff_radius = mod_data['falloff_radius']
-                new_mod.use_falloff_uniform = mod_data['uniform']
+            bpy.ops.object.modifier_apply(modifier=mod_name)
+            # Re-create the hook modifier at the new rest pose
+            new_mod = mesh_obj.modifiers.new(name=mod_name, type='HOOK')
+            new_mod.object = hook_empty
+            if mod_data['vertex_group']:
+                new_mod.vertex_group = mod_data['vertex_group']
+            new_mod.strength      = mod_data['strength']
+            new_mod.falloff_type  = mod_data['falloff_type']
+            new_mod.falloff_radius = mod_data['falloff_radius']
+            new_mod.use_falloff_uniform = mod_data['uniform']
+            # Reset modifier to bind at current position (new rest pose)
+            try:
                 bpy.ops.object.mode_set(mode='EDIT')
+                bpy.ops.mesh.select_all(action='SELECT')
                 bpy.ops.object.hook_reset(modifier=new_mod.name)
-            bpy.ops.object.mode_set(mode='OBJECT')
+                bpy.ops.object.mode_set(mode='OBJECT')
+            except: pass
         except Exception as e:
             print(f"[LSD] Flip bake failed on {mesh_obj.name}: {e}")
-            # Ensure we don't get stuck in EDIT mode
-            if mesh_obj.mode != 'OBJECT': bpy.ops.object.mode_set(mode='OBJECT')
     if prev_active:
         bpy.context.view_layer.objects.active = prev_active
     # 3. Apply visual transform on the Empty itself (bake constraint result → location)
@@ -1273,23 +1262,23 @@ def sync_dimension_flipping(obj):
     if not host: return
     host_props = host.lsd_pg_dim_props
     # Guard against recursion while role swapping
-    if root.name in _dim_flip_active_ids: return
+    if root.name in _dim_sync_active_ids: return
     # CHANGE-DETECTION GUARD: Only fire when is_flipped actually changes
-    last_flipped = bool(root.get("_lsd_last_flipped_state", False))
-    current_flipped = bool(host_props.is_flipped)
-    if last_flipped == current_flipped:
+    last_flipped = root.get("_lsd_last_flipped_state", None)
+    current_flipped = host_props.is_flipped
+    if last_flipped is None:
+        root["_lsd_last_flipped_state"] = int(current_flipped)
+        return
+    if bool(last_flipped) == bool(current_flipped):
         return
     root["_lsd_last_flipped_state"] = int(current_flipped)
-    _dim_flip_active_ids.add(root.name)
+    _dim_sync_active_ids.add(root.name)
     try:
-        # Convenience: Auto-adjust text orientation when assembly flips
-        host_props.flip_text = not host_props.flip_text
         # Re-resolve world matrices for the anchors before swapping
         bpy.context.view_layer.update()
-        # 1. Capture current participants and their anchors.
-        # We MUST target the MASTER anchors to avoid following visual offsets.
-        start_anchor = next((c for c in root.children if c.get("lsd_anchor_type") == "START" and c.get("lsd_is_dimension_anchor") == "MASTER"), None)
-        end_anchor = next((c for c in root.children if c.get("lsd_anchor_type") == "END" and c.get("lsd_is_dimension_anchor") == "MASTER"), None)
+        # 1. Capture current participants and their anchors
+        start_anchor = next((c for c in root.children if c.get("lsd_anchor_type") == "START"), None)
+        end_anchor = next((c for c in root.children if c.get("lsd_anchor_type") == "END"), None)
         obj_a = root.get("lsd_parent_obj") # Participant at Start (old P1)
         obj_b = root.get("lsd_slave_obj")  # Participant at End (old P2)
         if not all([start_anchor, end_anchor, obj_a, obj_b]):
@@ -1346,9 +1335,9 @@ def sync_dimension_flipping(obj):
     except Exception as e:
         print(f"[LSD] Flip Role Swap Error: {e}")
     finally:
-        if root.name in _dim_flip_active_ids:
-            _dim_flip_active_ids.remove(root.name)
+        _dim_sync_active_ids.remove(root.name)
 @staticmethod
+
 def apply_path_vertex_alignment(context):
     """
     Physically aligns all selected path vertices to the bounding box boundaries.
@@ -1997,24 +1986,17 @@ def update_viewport_material(self: 'LSD_MaterialProperties', context: bpy.types.
         objects_to_update.extend(get_all_children_objects(owner_datablock, context))
     for obj in objects_to_update:
         setup_and_update_material(obj, self.color)
-def create_driver(target_obj: bpy.types.Object, source_data_path: str, modifier_name: str, modifier_input_identifier: str) -> None:
+def create_driver(target_obj: bpy.types.Object, source_data_path: str, modifier_name: str, modifier_input_identifier: str, var_name: str = "var") -> None:
     """
     Creates a simple, robust, native driver to link a custom property to a
     modifier input.
-    This function is a key part of the addon's "native" philosophy. It uses
-    Blender's built-in driver system to create relationships, which means they
-    will continue to function perfectly even if the addon is disabled or uninstalled.
-    It uses the 'AVERAGE' driver type with a single variable as a simple and
-    efficient way to pass a value directly without needing a 'SCRIPTED' expression.
-    This is slightly more performant and is guaranteed to be safe, as it involves
-    no arbitrary code execution.
+    ...
     Args:
-        target_obj: The object containing the modifier to be driven.
-        source_data_path: The data path to the source custom property on the
-                          `target_obj` (e.g., '["my_prop"]').
-        modifier_name: The name of the modifier to drive.
-        modifier_input_identifier: The identifier of the modifier's input
-                                   socket (e.g., 'Input_2').
+        target_obj: ...
+        source_data_path: ...
+        modifier_name: ...
+        modifier_input_identifier: ...
+        var_name: The name of the variable inside the driver expression (default "var").
     """
     # Construct the full data path to the modifier's input property.
     driver_path = f'modifiers["{modifier_name}"]["{modifier_input_identifier}"]'
@@ -2032,14 +2014,14 @@ def create_driver(target_obj: bpy.types.Object, source_data_path: str, modifier_
     if driver.variables:
         driver.variables.remove(driver.variables[0])
     var = driver.variables.new()
-    var.name = "var"  # The name is arbitrary for a single-variable 'AVERAGE' driver.
+    var.name = var_name
     var.type = 'SINGLE_PROP'
     # Set the variable's target to the object itself and the specified data path.
     var.targets[0].id = target_obj
     var.targets[0].data_path = source_data_path
     # With an 'AVERAGE' driver and one variable, the expression is implicitly
-    # just the value of that variable. We set it explicitly for clarity.
-    driver.expression = "var"
+    # just the value of that variable.
+    driver.expression = var_name
 def get_unique_name(base_name: str) -> str:
     """
     Generates a unique object name in the current scene by appending a
@@ -2432,15 +2414,21 @@ def setup_native_slinky(slinky_obj, start_empty, end_empty):
         links.new(p_start.outputs['Mesh'], join_pts.inputs['Geometry'])
         links.new(coll_info.outputs['Instances'], join_pts.inputs['Geometry'])
         links.new(p_end.outputs['Mesh'], join_pts.inputs['Geometry'])
-        p_to_c = nodes.new('GeometryNodePointsToCurve')
+        try:
+            p_to_c = nodes.new('GeometryNodePointsToCurves')
+        except Exception:
+            p_to_c = nodes.new('GeometryNodePointsToCurve')
         links.new(join_pts.outputs['Geometry'], p_to_c.inputs['Points'])
         resample = nodes.new('GeometryNodeResampleCurve')
-        links.new(p_to_c.outputs['Curve'], resample.inputs['Curve'])
+        # Handle socket naming changes in Blender 4.0+ (Points to Curves uses 'Curves' output)
+        p_to_c_out = p_to_c.outputs.get('Curves') or p_to_c.outputs.get('Curve')
+        resample_in = resample.inputs.get('Curve') or resample.inputs.get('Curves')
+        links.new(p_to_c_out, resample_in)
         links.new(g_in.outputs[res_sock.name], resample.inputs['Count'])
-        # --- 3. Spiral Offset Logic ---
         # We move each point of the resampled curve in a circle perpendicular to its tangent.
         set_pos = nodes.new('GeometryNodeSetPosition')
-        links.new(resample.outputs['Curve'], set_pos.inputs['Geometry'])
+        resample_out = resample.outputs.get('Curve') or resample.outputs.get('Curves')
+        links.new(resample_out, set_pos.inputs['Geometry'])
         # Rotation angle = 2 * PI * Turns * Curve Parameter
         param = nodes.new('GeometryNodeInputCurveHandleType') # Wait, I need Curve Parameter
         param = nodes.new('GeometryNodeSplineParameter')
@@ -2475,8 +2463,10 @@ def setup_native_slinky(slinky_obj, start_empty, end_empty):
         profile = nodes.new('GeometryNodeCurvePrimitiveCircle'); profile.inputs['Resolution'].default_value = 8
         links.new(g_in.outputs[wire_sock.name], profile.inputs['Radius'])
         to_mesh = nodes.new('GeometryNodeCurveToMesh')
-        links.new(set_pos.outputs['Geometry'], to_mesh.inputs['Curve'])
-        links.new(profile.outputs['Curve'], to_mesh.inputs['Profile Curve'])
+        to_mesh_in = to_mesh.inputs.get('Curve') or to_mesh.inputs.get('Curves')
+        links.new(set_pos.outputs['Geometry'], to_mesh_in)
+        profile_out = profile.outputs.get('Curve') or profile.outputs.get('Curves')
+        links.new(profile_out, to_mesh.inputs['Profile Curve'])
         # Material
         set_mat = nodes.new('GeometryNodeSetMaterial')
         links.new(to_mesh.outputs['Mesh'], set_mat.inputs['Geometry'])
@@ -2783,7 +2773,10 @@ def setup_native_wrap_gn(path_obj: bpy.types.Object) -> None:
     normal_node.location = (-400, 400)
     sep_z = nodes.new('ShaderNodeSeparateXYZ')
     sep_z.location = (-250, 400)
-    compare_z = nodes.new('FunctionNodeCompare'); compare_z.operation = 'LESS_THAN'; compare_z.location = (-100, 400); compare_z.inputs['B'].default_value = -0.1
+    # AI Editor Note: Using 0.0 instead of -0.1 to be more robust for perfectly horizontal loops.
+    # This ensures that we only keep the "top" faces, which allows the boundary extraction
+    # to find the outer rim of the hull.
+    compare_z = nodes.new('FunctionNodeCompare'); compare_z.operation = 'LESS_THAN'; compare_z.location = (-100, 400); compare_z.inputs['B'].default_value = 0.0
     # --- Node Logic: Boundary Extraction ---
     # The Convex Hull node outputs a filled mesh (often triangulated).
     # To get a clean path for the chain, we must delete internal edges
@@ -2792,8 +2785,10 @@ def setup_native_wrap_gn(path_obj: bpy.types.Object) -> None:
     edge_neighbors = nodes.new('GeometryNodeInputMeshEdgeNeighbors')
     edge_neighbors.location = (-400, 100)
     compare_edges = nodes.new('FunctionNodeCompare')
+    # AI Editor Note: Boundary extraction logic. Boundary edges have exactly 1 face neighbor.
+    # Interior edges have > 1. By deleting edges with > 1 neighbor, we isolate the loop.
     compare_edges.data_type = 'INT'
-    compare_edges.operation = 'GREATER_THAN' # Delete internal edges (shared by >1 faces)
+    compare_edges.operation = 'NOT_EQUAL' # Keep neighbor count == 1
     compare_edges.location = (-200, 100)
     compare_edges.inputs['B'].default_value = 1
     delete_geom = nodes.new('GeometryNodeDeleteGeometry')
@@ -2944,6 +2939,23 @@ def setup_native_chain_gn(path_obj: bpy.types.Object, link_obj: bpy.types.Object
     link_len_socket.default_value = 0.2
     link_len_socket.min_value = 0.01
     anim_socket = iface.new_socket(name="Animation Offset", in_out="INPUT", socket_type='NodeSocketFloat')
+    
+    # NEW: Belt & Custom Hardware Sockets
+    is_belt_socket = iface.new_socket(name="Is Belt", in_out="INPUT", socket_type='NodeSocketBool')
+    belt_w_socket = iface.new_socket(name="Belt Width", in_out="INPUT", socket_type='NodeSocketFloat')
+    belt_w_socket.default_value = 0.02
+    belt_t_socket = iface.new_socket(name="Belt Thickness", in_out="INPUT", socket_type='NodeSocketFloat')
+    belt_t_socket.default_value = 0.005
+    
+    use_custom_roller_socket = iface.new_socket(name="Use Custom Roller", in_out="INPUT", socket_type='NodeSocketBool')
+    custom_roller_socket = iface.new_socket(name="Custom Roller", in_out="INPUT", socket_type='NodeSocketObject')
+    use_custom_conn_socket = iface.new_socket(name="Use Custom Connector", in_out="INPUT", socket_type='NodeSocketBool')
+    custom_conn_socket = iface.new_socket(name="Custom Connector", in_out="INPUT", socket_type='NodeSocketObject')
+    
+    # Colors
+    roller_col_socket = iface.new_socket(name="Roller Color", in_out="INPUT", socket_type='NodeSocketColor')
+    conn_col_socket = iface.new_socket(name="Connector Color", in_out="INPUT", socket_type='NodeSocketColor')
+    
     iface.new_socket(name="Geometry", in_out="OUTPUT", socket_type='NodeSocketGeometry')
     # --- 2. Create Core Nodes ---
     nodes = gn_group.nodes
@@ -3013,6 +3025,7 @@ def setup_native_chain_gn(path_obj: bpy.types.Object, link_obj: bpy.types.Object
     # Base Points
     links.new(group_input.outputs['Geometry'], curve_to_points.inputs['Curve'])
     links.new(group_input.outputs['Link Length'], curve_to_points.inputs['Length'])
+    
     # Calculation Chain
     links.new(index_node.outputs['Index'], math_base_len.inputs[0])
     links.new(group_input.outputs['Link Length'], math_base_len.inputs[1])
@@ -3021,51 +3034,128 @@ def setup_native_chain_gn(path_obj: bpy.types.Object, link_obj: bpy.types.Object
     links.new(group_input.outputs['Geometry'], curve_length.inputs['Curve'])
     links.new(math_add_anim.outputs['Value'], math_mod.inputs[0])
     links.new(curve_length.outputs['Length'], math_mod.inputs[1])
+    
     # Sampling
-    # AI Editor Note: In Blender 4.x, the input socket for Sample Curve is named "Curves".
-    links.new(group_input.outputs['Geometry'], sample_curve.inputs['Curves'])
+    # AI Editor Note: Handle socket naming changes in Blender 4.0+ (Sample Curve uses 'Curves' input)
+    links.new(group_input.outputs['Geometry'], sample_curve.inputs.get('Curves') or sample_curve.inputs.get('Curve'))
     links.new(math_mod.outputs['Value'], sample_curve.inputs['Length'])
+    
     # Set Position & Rotation
     links.new(curve_to_points.outputs['Points'], set_position.inputs['Geometry'])
     links.new(sample_curve.outputs['Position'], set_position.inputs['Position'])
     links.new(sample_curve.outputs['Tangent'], align_euler.inputs['Vector'])
-    # Instancing
-    links.new(set_position.outputs['Geometry'], instance_on_points.inputs['Points'])
-    links.new(group_input.outputs['Link Object'], link_info.inputs['Object'])
-    links.new(link_info.outputs['Geometry'], instance_on_points.inputs['Instance'])
-    links.new(align_euler.outputs['Rotation'], instance_on_points.inputs['Rotation'])
-    # Scaling
-    links.new(group_input.outputs['Geometry'], sample_nearest.inputs['Geometry'])
-    links.new(sample_curve.outputs['Position'], sample_nearest.inputs['Sample Position'])
-    links.new(group_input.outputs['Geometry'], sample_index.inputs['Geometry'])
-    links.new(sample_nearest.outputs['Index'], sample_index.inputs['Index'])
-    links.new(radius_attr.outputs['Attribute'], sample_index.inputs['Value'])
-    links.new(sample_index.outputs['Value'], instance_on_points.inputs['Scale'])
-    # Output
-    links.new(instance_on_points.outputs['Instances'], group_output.inputs['Geometry'])
-    # --- Add/Update the Modifier on the Path Object ---
-    # The modifier name is kept constant for a given chain type. This is robust
-    # because even if the user renames the path object, the drivers that target
-    # the modifier by this name will not break.
+    
+    # --- 9. Node Logic: Split Logic (Belt vs Chain) ---
+    switch_geom = nodes.new('GeometryNodeSwitch')
+    switch_geom.input_type = 'GEOMETRY'
+    switch_geom.location = (600, 0)
+    
+    # Path A: Chain (Instancing - Dual Phase)
+    # Phase 1: Connectors (Links)
+    instance_links = nodes.new('GeometryNodeInstanceOnPoints')
+    instance_links.location = (200, 100)
+    links.new(set_position.outputs['Geometry'], instance_links.inputs['Points'])
+    links.new(align_euler.outputs['Rotation'], instance_links.inputs['Rotation'])
+    
+    # Selection for Link vs Custom
+    switch_conn = nodes.new('GeometryNodeSwitch')
+    switch_conn.input_type = 'OBJECT'
+    switch_conn.location = (0, 200)
+    links.new(group_input.outputs['Link Object'], switch_conn.inputs['False'])
+    links.new(group_input.outputs['Custom Connector'], switch_conn.inputs['True'])
+    links.new(group_input.outputs['Use Custom Connector'], switch_conn.inputs['Switch'])
+    
+    conn_info = nodes.new('GeometryNodeObjectInfo')
+    conn_info.location = (50, 200)
+    links.new(switch_conn.outputs['Output'], conn_info.inputs['Object'])
+    links.new(conn_info.outputs['Geometry'], instance_links.inputs['Instance'])
+    
+    # Phase 2: Rollers
+    instance_rollers = nodes.new('GeometryNodeInstanceOnPoints')
+    instance_rollers.location = (200, 300)
+    links.new(set_position.outputs['Geometry'], instance_rollers.inputs['Points'])
+    
+    switch_roller = nodes.new('GeometryNodeSwitch')
+    switch_roller.input_type = 'OBJECT'
+    switch_roller.location = (0, 400)
+    links.new(group_input.outputs['Custom Roller'], switch_roller.inputs['True'])
+    links.new(group_input.outputs['Use Custom Roller'], switch_roller.inputs['Switch'])
+    
+    roller_info = nodes.new('GeometryNodeObjectInfo')
+    roller_info.location = (50, 400)
+    links.new(switch_roller.outputs['Output'], roller_info.inputs['Object'])
+    links.new(roller_info.outputs['Geometry'], instance_rollers.inputs['Instance'])
+    
+    join_chain = nodes.new('GeometryNodeJoinGeometry')
+    join_chain.location = (400, 100)
+    links.new(instance_links.outputs['Instances'], join_chain.inputs['Geometry'])
+    links.new(instance_rollers.outputs['Instances'], join_chain.inputs['Geometry'])
+    
+    # --- Path B: Belt (Curve to Mesh) ---
+    curve_to_mesh = nodes.new('GeometryNodeCurveToMesh')
+    curve_to_mesh.location = (400, -200)
+    
+    # ATOMIC FIX: Use proper identifier for Quadrilateral (Curve Primitive)
+    try:
+        profile_rect = nodes.new('GeometryNodeCurvePrimitiveQuadrilateral')
+    except Exception:
+        profile_rect = nodes.new('GeometryNodeMeshQuadrilateral') # Legacy guess
+    
+    profile_rect.location = (200, -300)
+    links.new(profile_rect.outputs.get('Curve') or profile_rect.outputs.get('Mesh'), curve_to_mesh.inputs['Profile Curve'])
+    links.new(group_input.outputs['Belt Width'], profile_rect.inputs['Width'])
+    links.new(group_input.outputs['Belt Thickness'], profile_rect.inputs['Height'])
+    
+    # Animated points to curve for smooth belt
+    try:
+        points_to_curve = nodes.new('GeometryNodePointsToCurves')
+    except Exception:
+        points_to_curve = nodes.new('GeometryNodePointsToCurve')
+    
+    points_to_curve.location = (200, -100)
+    links.new(set_position.outputs['Geometry'], points_to_curve.inputs['Points'])
+    
+    # Socket fallback for Curves vs Curve
+    p_to_c_out = points_to_curve.outputs.get('Curves') or points_to_curve.outputs.get('Curve')
+    c_to_m_in = curve_to_mesh.inputs.get('Curve') or curve_to_mesh.inputs.get('Curves')
+    links.new(p_to_c_out, c_to_m_in)
+    
+    # Final Switching
+    links.new(group_input.outputs['Is Belt'], switch_geom.inputs['Switch'])
+    links.new(join_chain.outputs['Geometry'], switch_geom.inputs['False'])
+    links.new(curve_to_mesh.outputs['Mesh'], switch_geom.inputs['True'])
+    
+    links.new(switch_geom.outputs['Output'], group_output.inputs['Geometry'])
+    
+    # --- Add/Update the Modifier ---
     mod_name = f"{MOD_PREFIX}Native_{path_obj.lsd_pg_mech_props.type_chain.capitalize()}Chain"
     mod = path_obj.modifiers.get(mod_name)
     if not mod:
         mod = path_obj.modifiers.new(name=mod_name, type='NODES')
     mod.node_group = gn_group
-    # --- Connect Modifier Inputs to Properties/Objects ---
+    
+    # --- Connect Modifier Inputs ---
     iface = gn_group.interface
-    link_obj_socket = iface.items_tree.get("Link Object")
-    link_len_socket = iface.items_tree.get("Link Length")
-    anim_socket = iface.items_tree.get("Animation Offset")
-    if link_obj_socket:
-        mod[link_obj_socket.identifier] = link_obj
-    if link_len_socket:
-        # Create a native driver to link the modifier's input to a persistent, native
-        # custom property. This ensures the chain works even if the addon is disabled.
-        create_driver(path_obj, '["lsd_native_chain_pitch"]', mod.name, link_len_socket.identifier)
-    if anim_socket:
-        # Create a native driver for the animation offset.
-        create_driver(path_obj, '["lsd_native_anim_offset"]', mod.name, anim_socket.identifier)
+    mod[iface.items_tree.get("Link Object").identifier] = link_obj
+    mod[iface.items_tree.get("Is Belt").identifier] = (path_obj.lsd_pg_mech_props.type_chain == 'BELT')
+    
+    # Standard Drivers
+    create_driver(path_obj, '["lsd_native_chain_pitch"]', mod.name, iface.items_tree.get("Link Length").identifier)
+    create_driver(path_obj, '["lsd_native_anim_offset"]', mod.name, iface.items_tree.get("Animation Offset").identifier, var_name="rotation")
+    
+    # Belt properties drivers
+    create_driver(path_obj, 'lsd_pg_mech_props["belt_width"]', mod.name, iface.items_tree.get("Belt Width").identifier)
+    create_driver(path_obj, 'lsd_pg_mech_props["belt_thickness"]', mod.name, iface.items_tree.get("Belt Thickness").identifier)
+    
+    # Custom hardware toggles and objects
+    mod[iface.items_tree.get("Use Custom Roller").identifier] = path_obj.lsd_pg_mech_props.chain_use_custom_roller
+    mod[iface.items_tree.get("Custom Roller").identifier] = path_obj.lsd_pg_mech_props.chain_custom_roller_obj
+    mod[iface.items_tree.get("Use Custom Connector").identifier] = path_obj.lsd_pg_mech_props.chain_use_custom_connector
+    mod[iface.items_tree.get("Custom Connector").identifier] = path_obj.lsd_pg_mech_props.chain_custom_connector_obj
+    
+    # Final Material/Color pass (using drivers for live updates)
+    create_driver(path_obj, 'lsd_pg_mech_props["chain_roller_color"]', mod.name, iface.items_tree.get("Roller Color").identifier)
+    create_driver(path_obj, 'lsd_pg_mech_props["chain_connector_color"]', mod.name, iface.items_tree.get("Connector Color").identifier)
 def update_chain_driver_settings(self: 'LSD_PG_Mech_Props', context: bpy.types.Context) -> None:
     """
     Updates the chain driver expression based on radius, ratio, and invert settings.
@@ -3172,6 +3262,7 @@ def update_dimensions(scene: bpy.types.Scene) -> None:
         if obj.get("lsd_is_dimension"):
             update_dimensions_for_object(obj)
 @persistent
+
 def dimension_update_handler(scene: bpy.types.Scene, depsgraph: bpy.types.Depsgraph) -> None:
     """Handler to update dimensions when units change."""
     if not scene: return
@@ -3182,8 +3273,11 @@ def dimension_update_handler(scene: bpy.types.Scene, depsgraph: bpy.types.Depsgr
         update_dimensions(scene)
         scene["lsd_last_unit_key"] = current_unit_key
 # ------------------------------------------------------------------------
+
 #   PART 1.2: AI GENERATION LOGIC (LOCAL)
+
 # ------------------------------------------------------------------------
+
 def get_part_catalog_prompt() -> str:
     """
     Generates a system prompt describing the available parametric parts.
@@ -3451,7 +3545,6 @@ def create_parametric_part_object(context: bpy.types.Context, category: str, typ
         props.rotor_arm_height = 0.001 * multiplier
         # 3. Categorized Overrides for specific span requirements
         if type_sub == 'JOINT_REVOLUTE':
-            # Revolute pin length should scale with body width but doesn't define the vertical span
             props.joint_pin_length = props.joint_width * 1.5
         elif type_sub in ['JOINT_PRISMATIC_WHEELS', 'JOINT_PRISMATIC_WHEELS_ROT']:
             props.joint_radius = 0.012 * multiplier # Wheel Radius
@@ -3459,6 +3552,20 @@ def create_parametric_part_object(context: bpy.types.Context, category: str, typ
             props.rack_width = 0.04 * multiplier
             props.rack_length = scale_factor # Matches the cage directly
             props.joint_sub_size = 0.08 * multiplier # Carriage Length
+    elif category == 'BASIC_SHAPE':
+        # Default Basic Shape: Normalized to scale_factor (default 0.1m / 100mm)
+        props.shape_size = scale_factor
+        props.shape_length_x = scale_factor
+        props.shape_width_y = scale_factor
+        props.shape_height_z = scale_factor
+        props.shape_radius = scale_factor / 2.0
+        props.shape_height = scale_factor
+        props.shape_major_radius = scale_factor * 0.4
+        props.shape_tube_radius = scale_factor * 0.1
+        # Fallback props for legacy mesh calculation
+        props.radius = scale_factor / 2.0
+        props.length = scale_factor
+        props.height = scale_factor
     elif category == 'ARCHITECTURAL':
         props.length = scale_factor
         props.height = scale_factor
@@ -3470,24 +3577,6 @@ def create_parametric_part_object(context: bpy.types.Context, category: str, typ
         props.step_count = 10
         props.step_height = scale_factor / 10.0
         props.step_depth = scale_factor / 8.0
-    elif category == 'BASIC_SHAPE':
-        # Direct unit mapping for shapes
-        props.radius = scale_factor / 2.0
-        props.length = scale_factor
-        props.height = scale_factor
-        props.shape_size = scale_factor
-        props.shape_length_x = scale_factor
-        props.shape_width_y = scale_factor / 2.0
-        props.shape_height_z = scale_factor / 4.0
-        props.shape_radius = scale_factor / 2.0
-        props.shape_height = scale_factor
-        props.shape_major_radius = scale_factor / 2.0
-        props.shape_tube_radius = scale_factor / 10.0
-        props.tooth_depth = scale_factor / 4.0 # Torus minor radius
-        props.teeth = 32 # Default segments for smooth shapes
-        # AI Editor Note: Specific default for Cube Width (Y) per user request.
-        if type_sub == 'SHAPE_CUBE':
-            props.radius = 1.0 * scale_factor # Width (Y)
     elif category == 'CHAIN':
         # AI Editor Note: For chains, scale the object itself to fit the cage.
         # Default curve diameter is 0.4.
@@ -4632,8 +4721,11 @@ def build_generative_robot(context: bpy.types.Context, prompt: str, scale_factor
     rig.select_set(True)
     context.view_layer.objects.active = rig
 # ------------------------------------------------------------------------
+
 #   PART 1.5: UI COLLAPSE LOGIC
+
 # ------------------------------------------------------------------------
+
 def get_all_children_objects(bone: bpy.types.PoseBone, context: bpy.types.Context) -> List[bpy.types.Object]:
     """
     Finds all objects (meshes, empties, etc.) that are effectively parented to a given bone,
@@ -4935,6 +5027,7 @@ def apply_native_constraints(bone: bpy.types.PoseBone) -> None:
     bone.ik_min_y, bone.ik_max_y = ik_rot_limits[1]
     bone.ik_min_z, bone.ik_max_z = ik_rot_limits[2]
 # --- AI Editor Note: Guard and Handler for Local Cursor Tool ---
+
 def update_local_cursor_from_tool(self, context):
     """
     Update callback for the local cursor tool property.
@@ -4954,6 +5047,7 @@ def update_local_cursor_from_tool(self, context):
         if (context.scene.cursor.location - world_co).length > 0.0001:
             context.scene.cursor.location = world_co
 @persistent
+
 def local_cursor_depsgraph_handler(scene: bpy.types.Scene, depsgraph: bpy.types.Depsgraph) -> None:
     """
     A persistent handler that runs on dependency graph updates to keep the
@@ -5046,6 +5140,7 @@ def lsd_prop_update(self, context, prop_name: str):
         finally:
             _prop_update_guard = False
 @persistent
+
 def active_bone_change_handler(scene: bpy.types.Scene, depsgraph: bpy.types.Depsgraph) -> None:
     """
     A persistent handler that runs on dependency graph updates to detect when
@@ -5317,7 +5412,9 @@ def update_ik_chain_length(bone: bpy.types.PoseBone, context: bpy.types.Context)
     if props.ik_chain_length != new_length:
         props.ik_chain_length = new_length
 # ------------------------------------------------------------------------
+
 # AI Editor Note: Consolidated registration to the bottom of the file for architectural clarity.
+
 def create_parametric_chain(context: bpy.types.Context, chain_type: str) -> bpy.types.Object:
     """
     Creates a complete, native, parametric chain setup.
@@ -5377,11 +5474,15 @@ def create_parametric_chain(context: bpy.types.Context, chain_type: str) -> bpy.
     path_obj["lsd_native_anim_offset"] = 0.0
     return path_obj
 # ------------------------------------------------------------------------
+
 #   Registration
+
 # ------------------------------------------------------------------------
+
 CLASSES = [
-    LSD_OT_Core_DisablePanel, LSD_OT_Core_TogglePanelVisibility, LSD_OT_Core_SnapCursorToActive
+    LSD_OT_Core_DisablePanel, LSD_OT_Core_SnapCursorToActive
 ]
+
 def register():
     # 1. Register Classes
     for cls in CLASSES:
@@ -5424,6 +5525,7 @@ def unregister():
 # ------------------------------------------------------------------------
 #   CURVE DRAFTING TOOLS
 # ------------------------------------------------------------------------
+
 def apply_curve_vertex_rotation(context):
     """
     Applies an incremental rotation to all selected curve control points.

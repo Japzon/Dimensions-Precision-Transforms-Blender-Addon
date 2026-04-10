@@ -7,6 +7,7 @@
 # No person or organization is authorized to misrepresent this work or claim
 # original authorship for themselves. Proper attribution is mandatory.
 # --------------------------------------------------------------------------------
+
 bl_info = {
     "name": "Dimensions & Precision Transforms",
     "author": "Greenlex Systems Services Incorporated",
@@ -18,6 +19,7 @@ bl_info = {
     "doc_url": "https://github.com/Japzon/Layouts-Systems-Draftsman-Toolkit-Addon.git",
     "tracker_url": "https://github.com/Japzon/Layouts-Systems-Draftsman-Toolkit-Addon/issues",
 }
+
 # Project Task: Robust Registration System (Project Task 1.1.2)
 # Handles module reloading to prevent 'ghost' notifications in Preferences.
 if "bpy" in locals():
@@ -33,6 +35,7 @@ from . import core
 from . import properties
 from . import operators
 from . import panels
+
 def register():
     # 0. Hard Registry Cleanup - Clears the persistent 'Missing Add-ons' warning
     try:

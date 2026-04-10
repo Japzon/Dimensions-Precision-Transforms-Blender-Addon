@@ -1,12 +1,21 @@
 # --------------------------------------------------------------------------------
+
 # Copyright (c) 2026 Greenlex Systems Services Incorporated. All rights reserved.
+
 #
+
 # Licensed under the GNU General Public License (GPL).
+
 # Original Architecture & Logic by Greenlex Systems Services Incorporated.
+
 #
+
 # No person or organization is authorized to misrepresent this work or claim
+
 # original authorship for themselves. Proper attribution is mandatory.
+
 # --------------------------------------------------------------------------------
+
 import bpy
 import bmesh
 import math
@@ -50,11 +59,17 @@ from .core import (
     build_quadruped_spider,
     get_part_catalog_prompt,
 )
+
 from . import properties
+
 #   PART 5: OPERATORS
+
 # ------------------------------------------------------------------------
+
 # --- ASSET LIBRARY SYSTEM OPERATORS ---
+
 # --- ASSET LIBRARY SYSTEM OPERATORS ---
+
 class LSD_OT_SelectObjectByName(bpy.types.Operator):
     """Selects a Dimension assembly in the scene by its exact name (LSD Internal Use)."""
     bl_idname = "lsd.select_object_by_name"
@@ -603,6 +618,7 @@ class LSD_OT_ImportToAssetCatalog(bpy.types.Operator):
         self.report({'INFO'}, f"Imported {len(imported_objs)} object(s) from {os.path.basename(filepath)}.")
         return {'FINISHED'}
 # --- MAIN OPERATORS ---
+
 class LSD_OT_Execute_AI_Prompt(bpy.types.Operator):
     """
     Executes the AI generation process based on the user's prompt.
@@ -1436,8 +1452,11 @@ class LSD_OT_SetOriginToCursor(bpy.types.Operator):
             return {'CANCELLED'}
         return {'FINISHED'}
 # ------------------------------------------------------------------------
+
 #   SECTION: MATERIAL & TEXTURING SYSTEM (REWRITTEN)
+
 # ------------------------------------------------------------------------
+
 def update_material_merge_trigger(self, context):
     """Trigger a re-merge when layer settings change."""
     # Use a timer to avoid context issues during property updates
@@ -2118,7 +2137,7 @@ class LSD_OT_AddBoolean(bpy.types.Operator):
             target.hide_render = True
         self.report({'INFO'}, f"Added {len(selected)} boolean modifier(s) to '{active.name}'.")
         return {'FINISHED'}
-def create_hook_anchor(context, mesh_obj, vert_indices, name_prefix="Hook", display_size=0.05, display_type='ARROWS', force_location=None):
+def create_hook_anchor(context, mesh_obj, vert_indices, name_prefix="Hook", display_size=0.05, display_type='SINGLE_ARROW', force_location=None):
     """
     Creates a Parametric Hook anchor at the world-space center of the provided vertex indices.
     Uses hook_reset to ensure the mesh does not warp when the modifier is bound.
@@ -2292,7 +2311,7 @@ class LSD_OT_AddParametricAnchor(bpy.types.Operator):
                 # 3. Create SINGLE Empty
                 empty = bpy.data.objects.new(f"HookGroup_{ref_obj.name}", None)
                 empty.location = shared_location
-                empty.empty_display_type = 'ARROWS'
+                empty.empty_display_type = 'SINGLE_ARROW'
                 empty.empty_display_size = final_display_size
                 empty["lsd_anchor"] = True
                 empty.show_in_front = True
@@ -2336,7 +2355,7 @@ class LSD_OT_AddParametricAnchor(bpy.types.Operator):
                              name_base += f"_{island_indices[0]}"
                         empty = bpy.data.objects.new(name_base, None)
                         empty.location = loc
-                        empty.empty_display_type = 'ARROWS'
+                        empty.empty_display_type = 'SINGLE_ARROW'
                         empty.empty_display_size = fs
                         empty["lsd_anchor"] = True
                         empty.show_in_front = True
@@ -3013,10 +3032,6 @@ class LSD_OT_Remove_Dimension(bpy.types.Operator):
         return core.get_dimension_host(context.active_object) is not None
     def execute(self, context):
         from . import core
-        # --- PHASE 0: CONTEXT CAPTURE ---
-        # AI Editor Note: Store NAMES, not objects, to avoid ReferenceErrors after deletion.
-        original_sel_names = [o.name for o in context.selected_objects]
-        original_act_name = context.view_layer.objects.active.name if context.view_layer.objects.active else None
         # 1. Harvest UNIQUE dimension roots from selection
         unique_roots = set()
         for o in context.selected_objects:
@@ -3036,48 +3051,30 @@ class LSD_OT_Remove_Dimension(bpy.types.Operator):
         if context.mode != 'OBJECT':
             bpy.ops.object.mode_set(mode='OBJECT')
         removed_count = 0
-        all_participants = set()
         for root in unique_roots:
             # Safety Check: Object might have been deleted if selected WITH its parent root
             if not root or root.name not in bpy.data.objects: continue
             # Identify participants
             participants = []
-            if root.get("lsd_parent_obj"):
-                p = root["lsd_parent_obj"]
-                if p and p.name in bpy.data.objects:
-                    participants.append(p)
-                    all_participants.add(p)
-            if root.get("lsd_slave_obj"):
-                s = root["lsd_slave_obj"]
-                if s and s.name in bpy.data.objects:
-                    participants.append(s)
-                    all_participants.add(s)
-            # --- PHASE 1: BAKE MODIFIERS ---
+            if root.get("lsd_parent_obj"): participants.append(root["lsd_parent_obj"])
+            if root.get("lsd_slave_obj"):  participants.append(root["lsd_slave_obj"])
+            # --- PHASE 1: BAKE & DETACH ---
             for hook_empty in participants:
-                # Robust detection: Tag based + name-based fallback for reliability
-                is_internal = hook_empty.get("lsd_is_internal_hook") or "Hook_Dim" in hook_empty.name
-                if not is_internal: continue
+                if not (hook_empty and hook_empty.name in bpy.data.objects): continue
                 # Find all meshes driven by this hook
                 for scene_obj in bpy.data.objects:
                     if scene_obj.type != 'MESH': continue
-                    # Collect names first to avoid list mutation errors during apply operation
-                    target_mods = [m.name for m in scene_obj.modifiers if m.type == 'HOOK' and m.object == hook_empty]
-                    for mod_name in target_mods:
-                        all_affected_meshes.add(scene_obj)
-                        try:
-                            # ATOMIC CONTEXT: Ensure exactly one object is active/selected
-                            bpy.ops.object.select_all(action='DESELECT')
-                            scene_obj.select_set(True)
-                            context.view_layer.objects.active = scene_obj
-                            # DEEP SYNC: Ensure world matrices are fully evaluated before baking
-                            context.view_layer.update()
-                            context.evaluated_depsgraph_get().update()
-                            if mod_name in scene_obj.modifiers:
-                                bpy.ops.object.modifier_apply(modifier=mod_name)
-                        except Exception as e:
-                            print(f"LSD Bake Error: {e}")
-                        finally:
-                            scene_obj.select_set(False)
+                    # If the mesh is driven by our dimension's hook, bake it
+                    for mod in scene_obj.modifiers:
+                        if mod.type == 'HOOK' and mod.object == hook_empty:
+                            all_affected_meshes.add(scene_obj)
+                            try:
+                                context.view_layer.objects.active = scene_obj
+                                scene_obj.select_set(True)
+                                bpy.ops.object.modifier_apply(modifier=mod.name)
+                            except: pass
+                            finally:
+                                scene_obj.select_set(False)
             # --- PHASE 2: PURGE ASSEMBLY ---
             to_delete = {root}
             for child in root.children:
@@ -3102,26 +3099,21 @@ class LSD_OT_Remove_Dimension(bpy.types.Operator):
                             elif isinstance(data, bpy.types.Curve): bpy.data.curves.remove(data)
                         except: pass
             removed_count += 1
-        # --- PHASE 3: PURGE HOOKS ---
-        for hook_empty in all_participants:
-            if hook_empty.name in bpy.data.objects:
-                # Robust identification fallback
-                is_internal = hook_empty.get("lsd_is_internal_hook") or "Hook_Dim" in hook_empty.name
-                if hook_empty.type != 'EMPTY' or not is_internal:
-                    continue
-                # Direct object removal
-                bpy.data.objects.remove(hook_empty, do_unlink=True)
-        # --- PHASE 4: CONTEXT RESTORATION ---
-        bpy.ops.object.select_all(action='DESELECT')
-        for name in original_sel_names:
-            obj = bpy.data.objects.get(name)
-            if obj:
-                obj.select_set(True)
-        if original_act_name:
-            act_obj = bpy.data.objects.get(original_act_name)
-            if act_obj:
-                context.view_layer.objects.active = act_obj
-        self.report({'INFO'}, f"Purged {removed_count} Dimension(s) and associated mechatronic hooks.")
+        # --- PHASE 3: FINAL ANCHOR CLEANUP ---
+        if all_affected_meshes:
+            original_sel = context.selected_objects
+            original_act = context.view_layer.objects.active
+            bpy.ops.object.select_all(action='DESELECT')
+            for m in all_affected_meshes:
+                if m.name in bpy.data.objects: m.select_set(True)
+            # Trigger the universal cleanup operator on these meshes
+            bpy.ops.lsd.cleanup_anchor()
+            # Restore selection (minus what was deleted)
+            for o in original_sel:
+                if o and o.name in bpy.data.objects: o.select_set(True)
+            if original_act and original_act.name in bpy.data.objects:
+                context.view_layer.objects.active = original_act
+        self.report({'INFO'}, f"Purged {removed_count} Dimension(s) and associated mechatronic links.")
         return {'FINISHED'}
 class LSD_OT_Add_Dimension(bpy.types.Operator):
     """
@@ -3139,10 +3131,6 @@ class LSD_OT_Add_Dimension(bpy.types.Operator):
         return context.active_object is not None
     def execute(self, context):
         from . import generators
-        # --- PHASE 0: SELECTION SAFETY ---
-        if len(context.selected_objects) < 2 and context.mode == 'OBJECT':
-             self.report({'WARNING'}, "Two selections are needed. First selection is static point, second selection is dynamic point.")
-             return {'CANCELLED'}
         initial_mode = context.mode
         initial_active = context.active_object
         scene = context.scene
@@ -3214,9 +3202,6 @@ class LSD_OT_Add_Dimension(bpy.types.Operator):
                 for mesh_obj, vert_indices, world_point in anchor_spec:
                     empty = create_hook_anchor(context, mesh_obj, vert_indices, name_prefix="Hook_Dim", display_type='CUBE', force_location=world_point)
                     if empty:
-                        # AI Editor Note: Tag as internal so the dimension cleanup logic
-                        # knows it is safe to delete this specific hook.
-                        empty["lsd_is_internal_hook"] = True
                         hook_empties.append((empty, world_point))
                 if len(hook_empties) < 2:
                     self.report({'ERROR'}, "Failed to create anchor hooks.")
@@ -4579,6 +4564,7 @@ class LSD_OT_GenerateROS2Workspace(bpy.types.Operator):
         # 1. package.xml (The Manifest)
         package_xml_content = f"""<?xml version="1.0"?>
 <?xml-model href="http://download.ros.org/schema/package_format3.xsd" schematypens="http://www.w3.org/2001/XMLSchema"?>
+
 <package format="3">
   <name>{pkg_name}</name>
   <version>0.0.0</version>
@@ -4598,23 +4584,31 @@ class LSD_OT_GenerateROS2Workspace(bpy.types.Operator):
     <build_type>ament_cmake</build_type>
   </export>
 </package>
+
 """
         with open(os.path.join(pkg_root, 'package.xml'), 'w') as f:
             f.write(package_xml_content)
         # 2. CMakeLists.txt (Build Rules)
         cmake_content = f"""cmake_minimum_required(VERSION 3.8)
 project({pkg_name})
+
 if(CMAKE_COMPILER_IS_GNUCXX OR CMAKE_CXX_COMPILER_ID MATCHES "Clang")
   add_compile_options(-Wall -Wextra -Wpedantic)
 endif()
+
 find_package(ament_cmake REQUIRED)
+
 find_package(urdf REQUIRED)
+
 find_package(xacro REQUIRED)
+
 install(
   DIRECTORY config launch meshes urdf worlds maps
   DESTINATION share/${{PROJECT_NAME}}
 )
+
 ament_package()
+
 """
         with open(os.path.join(pkg_root, 'CMakeLists.txt'), 'w') as f:
             f.write(cmake_content)
@@ -4625,6 +4619,7 @@ from launch.actions import IncludeLaunchDescription
 from launch.launch_description_sources import PythonLaunchDescriptionSource
 from launch_ros.actions import Node
 from ament_index_python.packages import get_package_share_directory
+
 def generate_launch_description():
     return LaunchDescription([
         IncludeLaunchDescription(
@@ -4712,6 +4707,7 @@ class LSD_OT_Export(bpy.types.Operator, ExportHelper):
             if scene.lsd_export_check_config:
                 package_xml_content = f"""<?xml version="1.0"?>
 <?xml-model href="http://download.ros.org/schema/package_format3.xsd" schematypens="http://www.w3.org/2001/XMLSchema"?>
+
 <package format="3">
   <name>{pkg_name}</name>
   <version>0.0.0</version>
@@ -4735,16 +4731,22 @@ class LSD_OT_Export(bpy.types.Operator, ExportHelper):
                     f.write(package_xml_content)
                 cmake_content = f"""cmake_minimum_required(VERSION 3.8)
 project({pkg_name})
+
 if(CMAKE_COMPILER_IS_GNUCXX OR CMAKE_CXX_COMPILER_ID MATCHES "Clang")
   add_compile_options(-Wall -Wextra -Wpedantic)
 endif()
+
 find_package(ament_cmake REQUIRED)
+
 find_package(urdf REQUIRED)
+
 find_package(xacro REQUIRED)
+
 install(
   DIRECTORY config launch meshes urdf worlds maps
   DESTINATION share/${{PROJECT_NAME}}
 )
+
 ament_package()"""
                 with open(os.path.join(base_dir, 'CMakeLists.txt'), 'w') as f:
                     f.write(cmake_content)
@@ -4766,6 +4768,7 @@ from launch.actions import IncludeLaunchDescription
 from launch.launch_description_sources import PythonLaunchDescriptionSource
 from launch_ros.actions import Node
 from ament_index_python.packages import get_package_share_directory
+
 def generate_launch_description():
     lsd_file = '{os.path.join(base_dir, lsd_name)}'
     with open(lsd_file, 'r') as infp:
@@ -5760,6 +5763,7 @@ class LSD_OT_ApplyRestPose(bpy.types.Operator):
             self.report({'INFO'}, "Applied Rest Pose to Armature.")
         return {'FINISHED'}
 # ------------------------------------------------------------------------
+
 class LSD_OT_LightTarget(bpy.types.Operator):
     """
     Constrains selected lights to point specifically at the last selected object center.
@@ -5933,8 +5937,11 @@ class LSD_OT_ToonifySelectedLights(bpy.types.Operator):
         self.report({'INFO'}, f"Toonified {count} light sources.")
         return {'FINISHED'}
 # ------------------------------------------------------------------------
+
 #   OPERATORS: CAMERA CINEMATOGRAPHY
+
 # ------------------------------------------------------------------------
+
 class LSD_OT_CreateCamera(bpy.types.Operator):
     """Creates a new Blueprint-ready camera based on selected preset."""
     bl_idname = "lsd.create_camera"
